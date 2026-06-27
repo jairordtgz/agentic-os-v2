@@ -76,7 +76,7 @@ void procesarEventos(Display *display, Window window)
 
 	        send(socketServidor,
 	             texto,
-	             strlen(texto),
+	             longitud,
 	             0);
 	    }
 

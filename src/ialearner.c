@@ -11,70 +11,133 @@
 #define PORT 5000
 #define BUFFER_SIZE 1024
 
+int documentosCorreo=0;
+int documentosArticulo=0;
+int documentosReporte=0;
+
+int clientesConectados=0;
+
+pthread_mutex_t mutex=PTHREAD_MUTEX_INITIALIZER;
+
 void *atenderCliente(void *arg)
 {
     int cliente = *(int *)arg;
-
     free(arg);
 
-    char buffer[BUFFER_SIZE];
-
+    char c;
     char oracion[BUFFER_SIZE];
-
     int indice = 0;
 
     printf("Nuevo hilo creado para cliente.\n");
 
-    while(1)
+    while (recv(cliente, &c, 1, 0) > 0)
     {
-        int n = recv(cliente,
-                     buffer,
-                     sizeof(buffer)-1,
-                     0);
-
-        if(n<=0)
-            break;
-
-        buffer[n]='\0';
-
-        for(int i=0;i<n;i++)
+        if (c == '\n')
         {
-            char c=buffer[i];
+            oracion[indice] = '\0';
 
-            if(c=='\n')
+            printf("\n=============================\n");
+            printf("Documento recibido:\n\n");
+            printf("%s\n\n", oracion);
+
+            int tipo = clasificarDocumento(oracion);
+	    actualizarResumen(tipo);
+            printf("Clasificacion: %s\n",
+                   nombreClase(tipo));
+
+            printf("=============================\n\n");
+
+            indice = 0;
+        }
+        else
+        {
+            if (indice < BUFFER_SIZE - 1)
             {
-                oracion[indice]='\0';
-
-		printf("\n=============================\n");
-
-		printf("Documento recibido:\n\n");
-
-		printf("%s\n\n",oracion);
-
-		int tipo=clasificarDocumento(oracion);
-
-		printf("Clasificacion: %s\n",
-		nombreClase(tipo));
-
-		printf("=============================\n\n");
-
-		indice=0;
-            }
-            else
-            {
-                if(indice<BUFFER_SIZE-1)
-                {
-                    oracion[indice++]=c;
-                }
+                oracion[indice++] = c;
             }
         }
     }
 
     printf("Cliente desconectado.\n");
+    pthread_mutex_lock(&mutex);
+    clientesConectados--;
 
+    if(clientesConectados==0)
+	{
+	    mostrarResumenFinal();
+	}
+
+    pthread_mutex_unlock(&mutex);
     close(cliente);
 
-    pthread_exit(NULL);
+    return NULL;
+}
+
+void actualizarResumen(int tipo)
+{
+    pthread_mutex_lock(&mutex);
+
+    if(tipo==EMAIL)
+        documentosCorreo++;
+
+    else if(tipo==ARTICULO)
+        documentosArticulo++;
+
+    else if(tipo==REPORTE)
+        documentosReporte++;
+
+    pthread_mutex_unlock(&mutex);
+}
+
+void mostrarResumenFinal()
+{
+    printf("\n=============================\n");
+
+    printf("RESUMEN FINAL\n\n");
+
+    printf("Correo electronico : %d\n",
+           documentosCorreo);
+
+    printf("Articulo cientifico: %d\n",
+           documentosArticulo);
+
+    printf("Reporte            : %d\n\n",
+           documentosReporte);
+
+    if(documentosCorreo>0 &&
+       documentosArticulo==0 &&
+       documentosReporte==0)
+    {
+        printf("Tipo de usuario: Personal administrativo\n");
+    }
+
+    else if(documentosCorreo>0 &&
+            documentosReporte>0 &&
+            documentosArticulo==0)
+    {
+        printf("Tipo de usuario: Personal tecnico\n");
+    }
+
+    else if(documentosCorreo>0 &&
+            documentosArticulo>0 &&
+            documentosReporte==0)
+    {
+        printf("Tipo de usuario: Profesor\n");
+    }
+
+    else if(documentosArticulo>0 &&
+            documentosReporte>0 &&
+            documentosCorreo==0)
+    {
+        printf("Tipo de usuario: Estudiante\n");
+    }
+
+    else
+    {
+        printf("Tipo de usuario: No determinado\n");
+    }
+
+    printf("=============================\n");
 }
 
 int main()
@@ -114,6 +177,11 @@ int main()
         }
 
         printf("Nueva conexion.\n");
+	pthread_mutex_lock(&mutex);
+
+	clientesConectados++;
+
+	pthread_mutex_unlock(&mutex);
 
         pthread_t hilo;
 

@@ -37,12 +37,42 @@ void convertirMinusculas(char texto[])
         texto[i]=tolower(texto[i]);
 }
 
+int esSeparador(char c)
+{
+    return c==' '  ||
+           c=='\n' ||
+           c=='\r' ||
+           c=='\t' ||
+           c==','  ||
+           c=='.'  ||
+           c==';'  ||
+           c==':';
+}
+
+int buscarPalabra(Diccionario dic, char palabra[])
+{
+    for(int i=0;i<PALABRAS;i++)
+    {
+        if(strcmp(dic.palabras[i], palabra)==0)
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
 void construirVector(char texto[],
                      Diccionario dic,
                      int vector[])
 {
     for(int i=0;i<PALABRAS;i++)
+    {
         vector[i]=0;
+    }
+
+    char palabra[100];
+    int indice=0;
 
     char copia[1024];
 
@@ -50,19 +80,35 @@ void construirVector(char texto[],
 
     convertirMinusculas(copia);
 
-    char *palabra=strtok(copia," ,.;:\n\t");
+    int longitud=strlen(copia);
 
-    while(palabra!=NULL)
+    for(int i=0;i<=longitud;i++)
     {
-        for(int i=0;i<PALABRAS;i++)
+        char c=copia[i];
+
+        if(esSeparador(c) || c=='\0')
         {
-            if(strcmp(palabra,dic.palabras[i])==0)
+            if(indice>0)
             {
-                vector[i]++;
+                palabra[indice]='\0';
+
+                int posicion=buscarPalabra(dic,palabra);
+
+                if(posicion!=-1)
+                {
+                    vector[posicion]++;
+                }
+
+                indice=0;
             }
         }
-
-        palabra=strtok(NULL," ,.;:\n\t");
+        else
+        {
+            if(indice<99)
+            {
+                palabra[indice++]=c;
+            }
+        }
     }
 }
 
