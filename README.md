@@ -1,4 +1,4 @@
-#Agentic-OS: predice que tipo de usuario eres: 
+# Agentic-OS: predice que tipo de usuario eres: 
 # Compilación
 
 Desde la carpeta raíz ejecutar:
