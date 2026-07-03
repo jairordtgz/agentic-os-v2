@@ -91,53 +91,55 @@ void actualizarResumen(int tipo)
 
 void mostrarResumenFinal()
 {
-    printf("\n=============================\n");
+    int total = documentosCorreo +
+                documentosArticulo +
+                documentosReporte;
 
+    printf("\n=============================\n");
     printf("RESUMEN FINAL\n\n");
 
-    printf("Correo electronico : %d\n",
-           documentosCorreo);
+    printf("Correo electronico : %d\n", documentosCorreo);
+    printf("Articulo cientifico: %d\n", documentosArticulo);
+    printf("Reporte            : %d\n", documentosReporte);
 
-    printf("Articulo cientifico: %d\n",
-           documentosArticulo);
-
-    printf("Reporte            : %d\n\n",
-           documentosReporte);
-
-    if(documentosCorreo>0 &&
-       documentosArticulo==0 &&
-       documentosReporte==0)
+    if(total == 0)
     {
-        printf("Tipo de usuario: Personal administrativo\n");
+        printf("No hay documentos.\n");
+        return;
     }
 
-    else if(documentosCorreo>0 &&
-            documentosReporte>0 &&
-            documentosArticulo==0)
-    {
-        printf("Tipo de usuario: Personal tecnico\n");
-    }
+    double pCorreo = (double)documentosCorreo / total;
+    double pArticulo = (double)documentosArticulo / total;
+    double pReporte = (double)documentosReporte / total;
 
-    else if(documentosCorreo>0 &&
-            documentosArticulo>0 &&
-            documentosReporte==0)
-    {
-        printf("Tipo de usuario: Profesor\n");
-    }
+    printf("\nProporciones\n");
+    printf("Correo   : %.2f%%\n", pCorreo * 100);
+    printf("Articulo : %.2f%%\n", pArticulo * 100);
+    printf("Reporte  : %.2f%%\n", pReporte * 100);
 
-    else if(documentosArticulo>0 &&
-            documentosReporte>0 &&
-            documentosCorreo==0)
-    {
-        printf("Tipo de usuario: Estudiante\n");
-    }
+    printf("\nTipo de usuario: ");
 
+    if(documentosArticulo == 0 &&
+       documentosReporte == 0)
+    {
+        printf("Personal administrativo");
+    }
+    else if(pCorreo <= pArticulo &&
+            pCorreo <= pReporte)
+    {
+        printf("Estudiante");
+    }
+    else if(pArticulo <= pCorreo &&
+            pArticulo <= pReporte)
+    {
+        printf("Personal tecnico");
+    }
     else
     {
-        printf("Tipo de usuario: No determinado\n");
+        printf("Profesor");
     }
 
-    printf("=============================\n");
+    printf("\n=============================\n");
 }
 
 int main()
