@@ -3,9 +3,9 @@
 
 #include <X11/Xlib.h>
 
-Display *iniciarDisplay();
-Window crearVentana(Display *display);
-void procesarEventos(Display *display, Window window);
+Display *iniciarDisplay(void);
+Window crearVentana(Display *display, Atom *wmDelete);
+void procesarEventos(Display *display, Atom wmDelete, int socketServidor);
 void cerrarVentana(Display *display, Window window);
 
 #endif

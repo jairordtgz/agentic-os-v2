@@ -1,30 +1,49 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 
 #include "socket_utils.h"
 
-int conectarServidor()
+int conectarServidor(const char *host, const char *puerto)
 {
     int socketCliente;
-
     struct sockaddr_in servidor;
+    struct in_addr direccionIP;
+    int numeroPuerto;
 
     socketCliente = socket(AF_INET, SOCK_STREAM, 0);
 
-    if(socketCliente < 0)
+    if (socketCliente < 0)
     {
         perror("socket");
         return -1;
     }
 
-    servidor.sin_family = AF_INET;
-    servidor.sin_port = htons(SERVER_PORT);
-    servidor.sin_addr.s_addr = inet_addr(SERVER_IP);
+    numeroPuerto = atoi(puerto);
 
-    if(connect(socketCliente,
-               (struct sockaddr *)&servidor,
-               sizeof(servidor)) < 0)
+    if (numeroPuerto <= 0 || numeroPuerto > 65535)
+    {
+        fprintf(stderr, "Puerto invalido: %s\n", puerto);
+        close(socketCliente);
+        return -1;
+    }
+
+    /* inet_pton devuelve 1 solo si "host" es una IPv4 valida. Usamos
+       esto en vez de inet_addr porque inet_addr no distingue bien
+       una IP invalida de la IP 255.255.255.255. */
+    if (inet_pton(AF_INET, host, &direccionIP) != 1)
+    {
+        fprintf(stderr, "Direccion IP invalida: %s\n", host);
+        close(socketCliente);
+        return -1;
+    }
+
+    servidor.sin_family = AF_INET;
+    servidor.sin_port = htons((unsigned short)numeroPuerto);
+    servidor.sin_addr = direccionIP;
+
+    if (connect(socketCliente, (struct sockaddr *)&servidor, sizeof(servidor)) < 0)
     {
         perror("connect");
         close(socketCliente);
