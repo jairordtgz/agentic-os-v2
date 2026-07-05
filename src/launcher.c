@@ -11,11 +11,14 @@
 #include "launcher.h"
 
 /* ---- Tabla de procesos (TDA) ----
-   Guarda el PID y el estado de cada ventana creada, para poder
-   consultarlo desde el menu sin tener que bloquear el programa
-   esperando a que las ventanas terminen (a diferencia de la version
-   anterior, que hacia wait() de todas las ventanas antes de poder
-   volver a mostrar el menu). */
+   Guarda el PID y el estado de cada ventana creada. A diferencia de
+   una version anterior, esta tabla NO tiene un tope fijo (no existe
+   ningun "MAX_VENTANAS"): crece dinamicamente con realloc segun se
+   necesite, para que "N ventanas" pueda ser realmente cualquier
+   cantidad que la maquina soporte, tal como lo pide el enunciado. */
+
+#define CAPACIDAD_INICIAL 8
+#define UMBRAL_ADVERTENCIA 100
 
 typedef enum
 {
@@ -30,8 +33,9 @@ typedef struct
     EstadoProceso estado;
 } InfoProceso;
 
-static InfoProceso tabla[MAX_VENTANAS];
+static InfoProceso *tabla = NULL;
 static int totalRegistrados = 0;
+static int capacidadTabla = 0;
 static volatile sig_atomic_t huboProcesoTerminado = 0;
 
 static void manejadorSigchld(int sig)
@@ -40,18 +44,31 @@ static void manejadorSigchld(int sig)
     huboProcesoTerminado = 1;
 }
 
-static void tablaAgregar(int idVentana, pid_t pid)
+/* Agrega una ventana a la tabla, haciendo crecer el arreglo al doble
+   de su capacidad cuando ya no cabe. Devuelve -1 solo si de verdad no
+   hay memoria disponible (caso extremo, no un limite artificial). */
+static int tablaAgregar(int idVentana, pid_t pid)
 {
-    if (totalRegistrados >= MAX_VENTANAS)
+    if (totalRegistrados == capacidadTabla)
     {
-        fprintf(stderr, "No se pueden registrar mas de %d ventanas.\n", MAX_VENTANAS);
-        return;
+        int nuevaCapacidad = (capacidadTabla == 0) ? CAPACIDAD_INICIAL : capacidadTabla * 2;
+        InfoProceso *nuevaTabla = realloc(tabla, sizeof(InfoProceso) * (size_t)nuevaCapacidad);
+
+        if (!nuevaTabla)
+        {
+            fprintf(stderr, "Sin memoria para registrar mas ventanas.\n");
+            return -1;
+        }
+
+        tabla = nuevaTabla;
+        capacidadTabla = nuevaCapacidad;
     }
 
     tabla[totalRegistrados].idVentana = idVentana;
     tabla[totalRegistrados].pid = pid;
     tabla[totalRegistrados].estado = PROC_EJECUTANDO;
     totalRegistrados++;
+    return 0;
 }
 
 static void tablaMarcarTerminado(pid_t pid)
@@ -117,6 +134,15 @@ static void terminarTodas(void)
     }
 }
 
+/* Libera la memoria de la tabla dinamica al terminar el programa. */
+static void tablaLiberar(void)
+{
+    free(tabla);
+    tabla = NULL;
+    totalRegistrados = 0;
+    capacidadTabla = 0;
+}
+
 /* Construye la ruta del ejecutable "window" a partir de la ubicacion
    del propio launcher (leyendo /proc/self/exe), en vez de usar una
    ruta relativa fija como "./bin/window". Asi el programa funciona
@@ -167,6 +193,13 @@ static void crearVentana(int idVentana, const char *rutaWindow,
 
     if (pid == 0)
     {
+        /* Cada ventana pasa a formar su propio grupo de procesos.
+           Sin esto, heredaria el mismo grupo que el launcher y la
+           terminal, y un Ctrl+C hecho en la terminal del launcher
+           (SIGINT) se propagaria a TODAS las ventanas a la vez,
+           cerrandolas todas de golpe en vez de solo al launcher. */
+        setpgid(0, 0);
+
         execl(rutaWindow, "window", host, puerto, (char *)NULL);
 
         /* Si execl regresa, es porque fallo. */
@@ -175,9 +208,18 @@ static void crearVentana(int idVentana, const char *rutaWindow,
     }
 
     printf("Launcher: ventana %d creada, PID=%d\n", idVentana, (int)pid);
-    tablaAgregar(idVentana, pid);
+
+    if (tablaAgregar(idVentana, pid) != 0)
+    {
+        fprintf(stderr,
+                "Aviso: la ventana %d (PID %d) quedo sin registrar en la tabla.\n",
+                idVentana, (int)pid);
+    }
 }
 
+/* Crea "cantidad" ventanas nuevas. No existe un tope maximo propio
+   del programa: el unico limite real es lo que la maquina pueda
+   soportar (procesos, memoria, conexiones de X11). */
 void crearVentanas(int cantidad, const char *host, const char *puerto)
 {
     static int siguienteId = 1;
@@ -188,13 +230,6 @@ void crearVentanas(int cantidad, const char *host, const char *puerto)
     {
         fprintf(stderr, "No se pudo determinar la ruta del programa window.\n");
         return;
-    }
-
-    if (cantidad > MAX_VENTANAS - totalRegistrados)
-    {
-        printf("Solo se pueden crear %d ventanas mas (limite: %d).\n",
-               MAX_VENTANAS - totalRegistrados, MAX_VENTANAS);
-        cantidad = MAX_VENTANAS - totalRegistrados;
     }
 
     for (i = 0; i < cantidad; i++)
@@ -257,6 +292,31 @@ static int leerEnteroPositivo(const char *mensaje, int minimo, int maximo)
     }
 }
 
+/* Si el usuario pide una cantidad muy grande de ventanas, se le avisa
+   y se le pide confirmar. No es un limite del programa, es solo una
+   proteccion contra errores de tecleo (ej. escribir de mas un cero),
+   ya que crear miles de procesos de golpe puede saturar la maquina. */
+static int confirmarCantidadGrande(int cantidad)
+{
+    char respuesta[8];
+
+    if (cantidad <= UMBRAL_ADVERTENCIA)
+    {
+        return 1;
+    }
+
+    printf("Vas a crear %d ventanas; esto puede consumir muchos recursos.\n", cantidad);
+    printf("¿Continuar? (s/n): ");
+    fflush(stdout);
+
+    if (leerLinea(respuesta, sizeof(respuesta)) != 0)
+    {
+        return 0;
+    }
+
+    return (respuesta[0] == 's' || respuesta[0] == 'S');
+}
+
 void mostrarMenu(const char *host, const char *puerto)
 {
     int opcion;
@@ -269,7 +329,7 @@ void mostrarMenu(const char *host, const char *puerto)
        menu sigue respondiendo aunque haya ventanas abiertas. */
     sa.sa_handler = manejadorSigchld;
     sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_NOCLDSTOP;
+    sa.sa_flags = SA_NOCLDSTOP | SA_RESTART;
 
     if (sigaction(SIGCHLD, &sa, NULL) < 0)
     {
@@ -306,10 +366,17 @@ void mostrarMenu(const char *host, const char *puerto)
         switch (opcion)
         {
             case 1:
-                cantidad = leerEnteroPositivo("Cantidad de ventanas: ", 1, MAX_VENTANAS);
-                if (cantidad > 0)
+                /* Sin tope maximo propio: solo INT_MAX como limite
+                   tecnico del tipo "int", no una regla de negocio. */
+                cantidad = leerEnteroPositivo("Cantidad de ventanas: ", 1, INT_MAX);
+
+                if (cantidad > 0 && confirmarCantidadGrande(cantidad))
                 {
                     crearVentanas(cantidad, host, puerto);
+                }
+                else if (cantidad > 0)
+                {
+                    printf("Operacion cancelada.\n");
                 }
                 break;
 
@@ -345,6 +412,8 @@ void mostrarMenu(const char *host, const char *puerto)
             tablaMarcarTerminado(pid);
         }
     }
+
+    tablaLiberar();
 }
 
 int main(int argc, char *argv[])
@@ -353,8 +422,9 @@ int main(int argc, char *argv[])
     const char *puerto = "5000";
 
     /* Permite indicar host y puerto del data center como argumentos:
-       ./launcher [host] [puerto]. Si no se dan, se usan los valores
-       por defecto (solo para pruebas locales). */
+       ./launcher [host] [puerto]. Estos valores solo se usan si el
+       usuario NO especifica nada -- por lo tanto no estan "quemados":
+       cualquiera puede cambiarlos sin tocar ni recompilar el codigo. */
     if (argc >= 2)
     {
         host = argv[1];
