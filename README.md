@@ -1,5 +1,10 @@
 # Agentic-OS: predice que tipo de usuario eres: 
 # Compilación
+Instalar la libreria de X11
+```bash
+sudo apt update && sudo apt install libx11-dev
+
+```
 
 Desde la carpeta raíz ejecutar:
 
